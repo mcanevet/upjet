@@ -71,3 +71,32 @@ func TestNormalizeStateID(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeStateIDIntegers(t *testing.T) {
+	cases := map[string]struct {
+		reason string
+		state  map[string]any
+		want   map[string]any
+	}{
+		"Int64": {
+			reason: "The plugin framework path decodes integral numbers to int64.",
+			state:  map[string]any{"id": int64(577654)},
+			want:   map[string]any{"id": "577654"},
+		},
+		"Int": {
+			reason: "A plain int is rendered the same way.",
+			state:  map[string]any{"id": 42},
+			want:   map[string]any{"id": "42"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := NormalizeStateID(tc.state); err != nil {
+				t.Fatalf("%s\nNormalizeStateID(...): unexpected error: %v", tc.reason, err)
+			}
+			if diff := cmp.Diff(tc.want, tc.state); diff != "" {
+				t.Errorf("%s\nNormalizeStateID(...): -want, +got:\n%s", tc.reason, diff)
+			}
+		})
+	}
+}

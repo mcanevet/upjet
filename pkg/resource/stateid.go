@@ -34,6 +34,16 @@ func NormalizeStateID(tfstate map[string]any) error {
 	if !ok {
 		return nil
 	}
+	switch v := id.(type) {
+	case int64:
+		// The plugin framework path (tfValueToGoValue) decodes integral
+		// numbers to int64, which needs no precision check.
+		tfstate["id"] = strconv.FormatInt(v, 10)
+		return nil
+	case int:
+		tfstate["id"] = strconv.Itoa(v)
+		return nil
+	}
 	f, ok := id.(float64)
 	if !ok {
 		// Strings need no work, and any other type is left alone so the caller

@@ -742,6 +742,9 @@ func (n *terraformPluginFrameworkExternalClient) Observe(ctx context.Context, mg
 		} else {
 			stateValueMap = conv.(map[string]any)
 		}
+		if err := resource.NormalizeStateID(stateValueMap); err != nil {
+			return managed.ExternalObservation{}, errors.Wrap(err, "cannot normalize state id")
+		}
 	} else if n.supportsIdentity() {
 		// For FW resources that use stub/placeholder identifiers
 		// in their external name, the initial Observe returns a
@@ -907,6 +910,9 @@ func (n *terraformPluginFrameworkExternalClient) Create(ctx context.Context, mg 
 	} else {
 		stateValueMap = goval.(map[string]any)
 	}
+	if err := resource.NormalizeStateID(stateValueMap); err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, "cannot normalize state id")
+	}
 
 	n.opTracker.SetFrameworkTFState(applyResponse.NewState)
 	if n.supportsIdentity() {
@@ -1011,6 +1017,9 @@ func (n *terraformPluginFrameworkExternalClient) Update(ctx context.Context, mg 
 		return managed.ExternalUpdate{}, errors.New("cannot convert native state to go map")
 	} else {
 		stateValueMap = goval.(map[string]any)
+	}
+	if err := resource.NormalizeStateID(stateValueMap); err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, "cannot normalize state id")
 	}
 
 	stateValueMap, err = n.config.ApplyTFConversions(stateValueMap, config.FromTerraform)
