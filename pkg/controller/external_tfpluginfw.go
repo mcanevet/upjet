@@ -158,7 +158,14 @@ func getFrameworkExtendedParameters(ctx context.Context, tr resource.Terraformed
 		if err != nil {
 			return nil, errors.Wrap(err, "cannot get ID")
 		}
-		params["id"] = tfID
+		// Before the resource is created there is no ID yet. Leave the
+		// (computed) attribute unset rather than setting it to "": a provider
+		// whose id is a number cannot decode an empty string, which fails every
+		// reconcile before Create runs (the plugin framework counterpart of
+		// skipping the synthetic state when the external name is empty).
+		if tfID != "" {
+			params["id"] = tfID
+		}
 	}
 
 	return params, nil
