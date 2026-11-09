@@ -8,6 +8,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	xpresource "github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
@@ -2024,6 +2025,80 @@ func TestNullCollectionsAsEmpty(t *testing.T) {
 			}
 			if !got.Equal(tc.want) {
 				t.Errorf("%s\nnullCollectionsAsEmpty(...):\nwant: %s\ngot:  %s", tc.reason, tc.want, got)
+			}
+		})
+	}
+}
+
+func TestTPFRecoverExternalNameNumericID(t *testing.T) {
+	stateType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":   tftypes.Number,
+		"name": tftypes.String,
+	}}
+	numericState := tftypes.NewValue(stateType, map[string]tftypes.Value{
+		"id":   tftypes.NewValue(tftypes.Number, 42),
+		"name": tftypes.NewValue(tftypes.String, "example"),
+	})
+	stringType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"id":   tftypes.String,
+		"name": tftypes.String,
+	}}
+	stringState := tftypes.NewValue(stringType, map[string]tftypes.Value{
+		"id":   tftypes.NewValue(tftypes.String, "example-id"),
+		"name": tftypes.NewValue(tftypes.String, "example"),
+	})
+	type want struct {
+		changed      bool
+		externalName string
+	}
+	cases := map[string]struct {
+		reason       string
+		stateType    tftypes.Type
+		state        tftypes.Value
+		externalName string
+		want         want
+	}{
+		"NumericID": {
+			reason:    "A plugin framework provider may declare id as a number: it must be recovered as its string form, or a resource whose external name was not persisted after Create can never be adopted again.",
+			stateType: stateType,
+			state:     numericState,
+			want:      want{changed: true, externalName: "42"},
+		},
+		"StringID": {
+			reason:    "A string id is recovered as is.",
+			stateType: stringType,
+			state:     stringState,
+			want:      want{changed: true, externalName: "example-id"},
+		},
+		"ExternalNameAlreadySet": {
+			reason:       "An existing external name is left alone.",
+			stateType:    stateType,
+			state:        numericState,
+			externalName: "7",
+			want:         want{changed: false, externalName: "7"},
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			dv, err := tfprotov6.NewDynamicValue(tc.stateType, tc.state)
+			if err != nil {
+				t.Fatalf("NewDynamicValue: %v", err)
+			}
+			tracker := NewAsyncTracker()
+			tracker.SetFrameworkTFState(&dv)
+			n := &terraformPluginFrameworkExternalClient{
+				config:                     newBaseUpjetConfig(),
+				opTracker:                  tracker,
+				resourceValueTerraformType: tc.stateType,
+			}
+			obj := newBaseObject()
+			if tc.externalName != "" {
+				meta.SetExternalName(&obj, tc.externalName)
+			}
+			changed := n.recoverExternalName(&obj)
+			got := want{changed: changed, externalName: meta.GetExternalName(&obj)}
+			if diff := cmp.Diff(tc.want, got, cmp.AllowUnexported(want{})); diff != "" {
+				t.Errorf("\n%s\nrecoverExternalName(...): -want, +got:\n%s", tc.reason, diff)
 			}
 		})
 	}

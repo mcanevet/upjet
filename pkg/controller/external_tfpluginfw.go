@@ -604,6 +604,9 @@ func (n *terraformPluginFrameworkExternalClient) recoverExternalName(mg xpresour
 	if !ok {
 		return false
 	}
+	if err := resource.NormalizeStateID(tfStateMap); err != nil {
+		return false
+	}
 	changed, err := n.setExternalName(mg, tfStateMap)
 	if err != nil {
 		return false
