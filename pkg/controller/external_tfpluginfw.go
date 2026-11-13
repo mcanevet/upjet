@@ -210,7 +210,17 @@ func (c *TerraformPluginFrameworkConnector) Connect(ctx context.Context, mg xpre
 		hasState = !tfStateValue.IsNull()
 	}
 
-	if !hasState {
+	if !hasState && externalName == "" {
+		// Without an external name the resource hasn't been created yet:
+		// reconstruct a null state, which Observe reports as a resource that
+		// doesn't exist, rather than a state that Read would be called with.
+		logger.Debug("Instance state not found in cache and no external name, reconstructing a null state")
+		nullState, err := tfprotov6.NewDynamicValue(resourceTfValueType, tftypes.NewValue(resourceTfValueType, nil))
+		if err != nil {
+			return nil, errors.Wrap(err, "cannot construct null dynamic value for TF state")
+		}
+		opTracker.SetReconstructedFrameworkTFState(&nullState)
+	} else if !hasState {
 		logger.Debug("Instance state not found in cache, reconstructing...")
 		tfState, err := tr.GetObservation()
 		if err != nil {
@@ -657,7 +667,18 @@ func (n *terraformPluginFrameworkExternalClient) Observe(ctx context.Context, mg
 	if n.supportsIdentity() {
 		readRequest.CurrentIdentity = n.opTracker.GetFrameworkIdentity()
 	}
-	readResponse, err := n.server.ReadResource(ctx, readRequest)
+	// A null state is a resource that doesn't exist: there is nothing to
+	// read, and Read may not accept a null state (e.g. one without an id).
+	var readResponse *tfprotov6.ReadResourceResponse
+	var err error
+	if state := n.opTracker.GetFrameworkTFState(); state != nil {
+		if isNull, nerr := state.IsNull(); nerr == nil && isNull {
+			readResponse = &tfprotov6.ReadResourceResponse{NewState: state}
+		}
+	}
+	if readResponse == nil {
+		readResponse, err = n.server.ReadResource(ctx, readRequest)
+	}
 	if err != nil {
 		n.opTracker.ResetReconstructedFrameworkTFState()
 		return managed.ExternalObservation{}, errors.Wrap(err, "cannot read resource")
